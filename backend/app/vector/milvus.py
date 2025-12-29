@@ -149,4 +149,39 @@ class MilvusService:
         )
         return results
 
+    def delete_by_article_ids(self, article_ids):
+        if not article_ids:
+            return 0
+        try:
+            if not hasattr(self, "collection"):
+                return 0
+
+            # 确保集合已加载
+            self.collection.load()
+
+            # 去重并清理非法 ID
+            unique_ids = [int(i) for i in set(article_ids) if i is not None]
+            if not unique_ids:
+                return 0
+
+            total_deleted = 0
+            batch_size = 1000
+            for i in range(0, len(unique_ids), batch_size):
+                batch = unique_ids[i:i + batch_size]
+                expr = f"article_id in [{','.join(map(str, batch))}]"
+                result = self.collection.delete(expr)
+                total_deleted += getattr(result, "delete_count", 0)
+
+            self.collection.flush()
+            try:
+                # 触发压实以便尽快清理已删除数据
+                self.collection.compact()
+            except Exception as e:
+                print(f"Milvus compact failed: {e}")
+
+            return total_deleted
+        except Exception as e:
+            print(f"Failed to delete vectors for articles {article_ids}: {e}")
+            return 0
+
 milvus_service = MilvusService()
