@@ -152,16 +152,41 @@ class MilvusService:
             "metric_type": "L2", 
             "params": {"nprobe": 10}
         }
-        
-        results = self.collection.search(
-            data=query_vectors, 
-            anns_field="vector", 
-            param=search_params, 
-            limit=top_k, 
-            expr=expr,
-            output_fields=["chunk_content", "article_id"]
-        )
-        return results
+
+        output_fields = []
+        try:
+            schema_fields = {field.name for field in self.collection.schema.fields}
+            output_fields = [f for f in ["chunk_content", "article_id"] if f in schema_fields]
+            if not output_fields:
+                logger.warning("No valid output fields in collection '%s'", self.collection_name)
+        except Exception as e:
+            logger.warning("Failed to read collection schema: %s", e)
+
+        try:
+            results = self.collection.search(
+                data=query_vectors, 
+                anns_field="vector", 
+                param=search_params, 
+                limit=top_k, 
+                expr=expr,
+                output_fields=output_fields
+            )
+            return results
+        except Exception as e:
+            logger.error("Milvus search failed: %s", e)
+            try:
+                results = self.collection.search(
+                    data=query_vectors, 
+                    anns_field="vector", 
+                    param=search_params, 
+                    limit=top_k, 
+                    expr=expr,
+                    output_fields=[]
+                )
+                return results
+            except Exception as e2:
+                logger.error("Milvus search retry failed: %s", e2)
+                return []
 
     def delete_by_article_ids(self, article_ids):
         if not article_ids:
