@@ -1,17 +1,33 @@
+# ========================================
+# RSS Reader Backend Dependencies
+# ========================================
+
+# Core Framework
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
+
+# Database
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
+
+# Vector Database (Milvus)
 pymilvus>=2.3.0
-google-genai>=0.3.0  # Replaced deprecated google-generativeai
+
+# AI (Google Gemini)
+google-genai>=0.3.0
+
+# RSS Parsing
+feedparser>=6.0.0
+
+# Scheduling
 apscheduler>=3.10.0
-python-jose>=3.3.0
-cryptography>=42.0.0 # Explicit backend for python-jose
+
+# Security & Authentication
+python-jose[cryptography]>=3.3.0
 passlib>=1.7.4
-argon2-cffi>=23.1.0  # Modern alternative to bcrypt (avoids version conflicts)
+argon2-cffi>=23.1.0
+
+# Utilities
 python-multipart>=0.0.6
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-httpx>=0.24.0
 python-dotenv>=1.0.0

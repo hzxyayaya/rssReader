@@ -4,6 +4,72 @@ import { useEntryStore } from '../stores/entryStore'
 import { useFeedStore } from '../stores/feedStore'
 import { useUiStore } from '../stores/uiStore'
 import { askQuestion } from '../api/qa'
+import DOMPurify from 'dompurify'
+
+// Simple Markdown parser
+function parseMarkdown(text) {
+  if (!text) return ''
+  
+  let html = text
+    // Escape HTML first
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    
+  // Code blocks (``` ... ```)
+  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
+    return `<pre class="code-block"><code class="lang-${lang || ''}">${code.trim()}</code></pre>`
+  })
+  
+  // Inline code (`...`)
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+  
+  // Headers (### > ## > #)
+  html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>')
+  html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>')
+  
+  // Bold (**text**)
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  
+  // Italic (*text*)
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  
+  // Unordered lists (- item)
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+  
+  // Ordered lists (1. item)
+  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+  
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  
+  // Line breaks
+  html = html.replace(/\n\n/g, '</p><p>')
+  html = html.replace(/\n/g, '<br>')
+  
+  // Wrap in paragraph
+  html = `<p>${html}</p>`
+  
+  // Clean up empty paragraphs
+  html = html.replace(/<p><\/p>/g, '')
+  html = html.replace(/<p>(<h[234]>)/g, '$1')
+  html = html.replace(/(<\/h[234]>)<\/p>/g, '$1')
+  html = html.replace(/<p>(<pre)/g, '$1')
+  html = html.replace(/(<\/pre>)<\/p>/g, '$1')
+  html = html.replace(/<p>(<ul>)/g, '$1')
+  html = html.replace(/(<\/ul>)<\/p>/g, '$1')
+  
+  return DOMPurify.sanitize(html)
+}
+
+function renderContent(msg) {
+  if (msg.role === 'user') {
+    return msg.content
+  }
+  return parseMarkdown(msg.content)
+}
 
 const entryStore = useEntryStore()
 const feedStore = useFeedStore()
@@ -191,7 +257,11 @@ async function sendMessage() {
         class="message-bubble"
         :class="msg.role"
       >
-        <div class="message-content">{{ msg.content }}</div>
+        <div 
+          class="message-content" 
+          :class="{ 'markdown-body': msg.role === 'ai' }"
+          v-html="renderContent(msg)"
+        ></div>
         
         <div v-if="msg.citations && msg.citations.length > 0" class="citations">
           <div class="citation-title">参考来源:</div>
@@ -380,6 +450,66 @@ async function sendMessage() {
 .message-bubble.isError {
   border-color: red;
   color: red;
+}
+
+/* Markdown styles */
+.markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  margin: 0.5em 0 0.25em 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.markdown-body h2 { font-size: 1.1em; }
+.markdown-body h3 { font-size: 1em; }
+.markdown-body h4 { font-size: 0.95em; }
+
+.markdown-body p {
+  margin: 0.25em 0;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body ul {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-body li {
+  margin: 0.25em 0;
+}
+
+.markdown-body .inline-code {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85em;
+}
+
+.markdown-body .code-block {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 0.75em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+  font-size: 0.85em;
+}
+
+.markdown-body .code-block code {
+  font-family: 'Fira Code', 'Consolas', monospace;
+  white-space: pre;
+}
+
+.markdown-body a {
+  color: var(--color-accent);
+  text-decoration: underline;
 }
 
 .input-area {

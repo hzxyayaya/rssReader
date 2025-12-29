@@ -1,79 +1,120 @@
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MilvusService:
     def __init__(self):
         self.collection_name = "news_chunks"
+        self.collection = None
+        self.connected = False
+        self._loaded = False
         self._connect()
-        self._init_collection()
+        if self.connected:
+            self._init_collection()
 
     def _connect(self):
         try:
             connections.connect(
                 alias="default", 
                 host=settings.MILVUS_HOST, 
-                port=settings.MILVUS_PORT
+                port=settings.MILVUS_PORT,
+                timeout=5
             )
-            print(f"Connected to Milvus at {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
+            self.connected = True
+            logger.info(f"Connected to Milvus at {settings.MILVUS_HOST}:{settings.MILVUS_PORT}")
         except Exception as e:
-            print(f"Failed to connect to Milvus: {e}")
+            self.connected = False
+            logger.warning(f"Milvus not available: {e}. AI Q&A features will be disabled.")
 
     def _init_collection(self):
-        if utility.has_collection(self.collection_name):
-            self.collection = Collection(self.collection_name)
-            self.collection.load()
+        """Initialize collection without loading - loading happens lazily on first search"""
+        if not self.connected:
             return
+            
+        try:
+            if utility.has_collection(self.collection_name):
+                self.collection = Collection(self.collection_name)
+                logger.info(f"Collection '{self.collection_name}' found (will load on first search)")
+                return
+        except Exception as e:
+            logger.warning(f"Failed to get existing collection: {e}, will create new one")
 
-        # Define schema
-        article_id = FieldSchema(
-            name="article_id", 
-            dtype=DataType.INT64, 
-            description="Article ID from PostgreSQL"
-        )
-        chunk_id = FieldSchema(
-            name="id", 
-            dtype=DataType.INT64, 
-            is_primary=True, 
-            auto_id=True
-        )
-        chunk_content = FieldSchema(
-            name="chunk_content", 
-            dtype=DataType.VARCHAR, 
-            max_length=4096  # Limit text length
-        )
-        vector = FieldSchema(
-            name="vector", 
-            dtype=DataType.FLOAT_VECTOR, 
-            dim=768  # Gemini Embedding dim
-        )
+        try:
+            # Define schema
+            article_id = FieldSchema(
+                name="article_id", 
+                dtype=DataType.INT64, 
+                description="Article ID from PostgreSQL"
+            )
+            chunk_id = FieldSchema(
+                name="id", 
+                dtype=DataType.INT64, 
+                is_primary=True, 
+                auto_id=True
+            )
+            chunk_content = FieldSchema(
+                name="chunk_content", 
+                dtype=DataType.VARCHAR, 
+                max_length=4096
+            )
+            vector = FieldSchema(
+                name="vector", 
+                dtype=DataType.FLOAT_VECTOR, 
+                dim=768  # Gemini Embedding dim
+            )
 
-        schema = CollectionSchema(
-            fields=[chunk_id, article_id, chunk_content, vector], 
-            description="News article chunks"
-        )
+            schema = CollectionSchema(
+                fields=[chunk_id, article_id, chunk_content, vector], 
+                description="News article chunks"
+            )
 
-        self.collection = Collection(
-            name=self.collection_name, 
-            schema=schema, 
-            using='default'
-        )
+            self.collection = Collection(
+                name=self.collection_name, 
+                schema=schema, 
+                using='default'
+            )
+            
+            # Create index for vector field
+            index_params = {
+                "metric_type": "L2",
+                "index_type": "IVF_FLAT",
+                "params": {"nlist": 1024}
+            }
+            self.collection.create_index(field_name="vector", index_params=index_params)
+            logger.info(f"New collection '{self.collection_name}' created")
+        except Exception as e:
+            logger.error(f"Failed to create collection: {e}")
+            self.collection = None
+
+    def _ensure_loaded(self):
+        """Lazy load collection into memory when needed"""
+        if self._loaded or self.collection is None:
+            return
         
-        # Create index for vector field
-        index_params = {
-            "metric_type": "L2",
-            "index_type": "IVF_FLAT",
-            "params": {"nlist": 1024}
-        }
-        self.collection.create_index(field_name="vector", index_params=index_params)
-        self.collection.load()
+        try:
+            logger.info(f"Loading collection '{self.collection_name}' into memory...")
+            self.collection.load(_async=False, timeout=120)
+            self._loaded = True
+            logger.info(f"Collection '{self.collection_name}' loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load collection: {e}")
+
+    def is_available(self):
+        """Check if Milvus is available and ready"""
+        return self.connected and self.collection is not None
 
     def insert_vectors(self, vectors, attributes):
         """
         vectors: list of lists (float vectors)
         attributes: list of dicts (scalar fields)
         """
-        # pymilvus inserts: [ [field1_values], [field2_values] ... ]
-        # Ensure order matches schema
+        if not self.is_available():
+            logger.warning("Milvus not available, skipping vector insert")
+            return
+            
+        # No need to load for insert operations
         data = [
             [attr["article_id"] for attr in attributes],
             [attr["chunk_content"] for attr in attributes],
@@ -83,6 +124,16 @@ class MilvusService:
         self.collection.flush()
 
     def search_vectors(self, query_vectors, top_k=5, expr=None):
+        if not self.is_available():
+            logger.warning("Milvus not available, cannot search")
+            return []
+        
+        # Lazy load only when searching
+        self._ensure_loaded()
+        if not self._loaded:
+            logger.warning("Collection not loaded, cannot search")
+            return []
+            
         search_params = {
             "metric_type": "L2", 
             "params": {"nprobe": 10}
