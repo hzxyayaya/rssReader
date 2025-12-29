@@ -42,6 +42,10 @@ def create_feed(
     existing = db.query(FeedModel).filter(FeedModel.user_id == current_user.id, FeedModel.url == feed.url).first()
     if existing:
         raise HTTPException(status_code=400, detail="Feed already subscribed")
+
+    parsed = rss_ingest_service.fetch_feed(feed.url)
+    if getattr(parsed, "bozo", False) and not getattr(parsed, "entries", None):
+        raise HTTPException(status_code=400, detail="Invalid feed")
     
     db_feed = FeedModel(
         title=feed.title,
