@@ -2,34 +2,34 @@ version: '3.8'
 
 services:
   # Frontend Service
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    restart: always
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - backend
+  #   restart: always
 
-  # Backend Service
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rss_reader
-      - MILVUS_HOST=milvus-standalone
-      - MILVUS_PORT=19530
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-    ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-      milvus-standalone:
-        condition: service_started
-    restart: always
+  # # Backend Service
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - DATABASE_URL=postgresql://postgres:postgres@db:5432/rss_reader
+  #     - MILVUS_HOST=milvus-standalone
+  #     - MILVUS_PORT=19530
+  #     - GEMINI_API_KEY=${GEMINI_API_KEY}
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #     milvus-standalone:
+  #       condition: service_started
+  #   restart: always
 
   # PostgreSQL Database
   db:

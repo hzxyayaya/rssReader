@@ -56,9 +56,9 @@ docker-compose up -d --build
 
 | 服务 | 地址 |
 |------|------|
-| 前端界面 | http://localhost:80 |
-| 后端 API | http://localhost:8000 |
-| API 文档 | http://localhost:8000/docs |
+| 前端界面 | http://localhost:5173 |
+| 后端 API | http://localhost:8021 |
+| API 文档 | http://localhost:8021/docs |
 | MinIO 控制台 | http://localhost:9001 |
 
 ### 5. 查看日志
@@ -105,7 +105,7 @@ pip install -r requirements.txt
 # 配置环境变量 (编辑 .env 文件)
 
 # 启动服务
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8021
 ```
 
 ### 前端
@@ -129,8 +129,8 @@ npm run build
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| Frontend | 80 (Docker) / 5173 (Dev) | Vue 前端应用 |
-| Backend | 8000 | FastAPI 后端服务 |
+| Frontend | 5173 | Vue 前端应用 |
+| Backend | 8021 | FastAPI 后端服务 |
 | PostgreSQL | 54321 (外部映射) | 关系型数据库 |
 | Milvus | 19530 | 向量数据库 |
 | MinIO | 9000, 9001 | 对象存储 (Milvus 依赖) |
