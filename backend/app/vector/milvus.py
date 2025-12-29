@@ -91,15 +91,29 @@ class MilvusService:
     def _ensure_loaded(self):
         """Lazy load collection into memory when needed"""
         if self._loaded or self.collection is None:
-            return
+            return True
         
         try:
             logger.info(f"Loading collection '{self.collection_name}' into memory...")
             self.collection.load(_async=False, timeout=120)
             self._loaded = True
             logger.info(f"Collection '{self.collection_name}' loaded successfully")
+            return True
         except Exception as e:
             logger.error(f"Failed to load collection: {e}")
+            self._loaded = False
+            # Try to reconnect and reload
+            try:
+                self._connect()
+                if self.connected:
+                    self.collection = Collection(self.collection_name)
+                    self.collection.load(_async=False, timeout=120)
+                    self._loaded = True
+                    logger.info(f"Collection '{self.collection_name}' reloaded after reconnect")
+                    return True
+            except Exception as e2:
+                logger.error(f"Failed to reload collection after reconnect: {e2}")
+            return False
 
     def is_available(self):
         """Check if Milvus is available and ready"""

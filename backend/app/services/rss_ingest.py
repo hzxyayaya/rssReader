@@ -27,8 +27,10 @@ class RssIngestService:
             # Generate hash for deduplication
             content_hash = hashlib.md5((entry.link + (entry.get('title') or '')).encode()).hexdigest()
             
-            # Check if exists
-            exists = db.query(Article).filter(Article.content_hash == content_hash).first()
+            # Check if exists by content_hash OR url (both have unique constraints)
+            exists = db.query(Article).filter(
+                (Article.content_hash == content_hash) | (Article.url == entry.link)
+            ).first()
             if exists:
                 continue
 

@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const http = axios.create({
     baseURL: '/api', // Vite proxy will handle this
-    timeout: 10000
+    timeout: 60000  // 60 seconds for AI Q&A
 })
 
 // Request interceptor: Add Token

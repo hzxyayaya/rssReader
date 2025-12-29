@@ -44,11 +44,17 @@ export const useEntryStore = defineStore('entry', () => {
     })
 
     // 排序后的文章列表（未读优先，然后按时间倒序）
+    // 注意：viewedEntryIds 中的文章虽然视觉上已读，但不会立即重新排序
+    // 只有在切换订阅源时才会批量标记为已读并重新排序
     const sortedEntries = computed(() => {
         return [...entries.value].sort((a, b) => {
+            // 判断是否为「真正已读」（不包含本次会话中刚查看的）
+            const aIsRead = a.isRead
+            const bIsRead = b.isRead
+
             // 未读文章优先
-            if (a.isRead !== b.isRead) {
-                return a.isRead ? 1 : -1
+            if (aIsRead !== bIsRead) {
+                return aIsRead ? 1 : -1
             }
             // 按发布时间倒序
             return new Date(b.publishedAt) - new Date(a.publishedAt)
@@ -146,8 +152,11 @@ export const useEntryStore = defineStore('entry', () => {
         // 更新当前选中的文章
         currentEntryId.value = entryId
 
-        // 立即标记为已读
-        markAsRead(entryId)
+        // 添加到已查看列表（视觉已读，但不立即移动位置）
+        const entry = entries.value.find(e => e.id === entryId)
+        if (entry && !entry.isRead) {
+            viewedEntryIds.value.add(entryId)
+        }
 
         // 异步加载完整内容
         loadFullContent(entryId)
@@ -229,13 +238,15 @@ export const useEntryStore = defineStore('entry', () => {
 
     /**
      * 切换订阅源时调用
-     * 标记所有已查看的文章为已读，并清除状态
+     * 批量标记所有已查看的文章为已读，然后清除状态
      */
-    function clearCurrentEntry() {
-        // 标记所有已查看的文章为已读
-        viewedEntryIds.value.forEach(entryId => {
-            markAsRead(entryId)
-        })
+    async function clearCurrentEntry() {
+        // 批量标记所有已查看的文章为已读
+        const idsToMark = Array.from(viewedEntryIds.value)
+
+        for (const entryId of idsToMark) {
+            await markAsRead(entryId)
+        }
 
         // 清除已查看列表
         viewedEntryIds.value.clear()
