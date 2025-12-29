@@ -25,7 +25,7 @@ def trigger_vectorization(
 @router.get("/", response_model=List[ArticleList])
 def get_news(
     skip: int = 0, 
-    limit: int = 20, 
+    limit: Optional[int] = None, 
     feed_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -34,7 +34,10 @@ def get_news(
     if feed_id:
         query = query.filter(ArticleModel.feed_id == feed_id)
     
-    articles = query.order_by(ArticleModel.published_at.desc()).offset(skip).limit(limit).all()
+    query = query.order_by(ArticleModel.published_at.desc()).offset(skip)
+    if limit is not None:
+        query = query.limit(limit)
+    articles = query.all()
     return articles
 
 # IMPORTANT: This must come BEFORE /{article_id} to avoid route conflict

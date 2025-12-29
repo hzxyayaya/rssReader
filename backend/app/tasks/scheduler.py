@@ -32,20 +32,17 @@ def fetch_and_process_feeds():
         db.close()
     logger.info("Feed fetch completed.")
 
-def process_vectorization(db: Session):
-    logger.info("Starting vectorization...")
-    # Batch size 10 to avoid overload
-    articles = db.query(Article).filter(Article.is_vectorized == False).limit(50).all()
-    
+def _vectorize_articles(db: Session, articles: list[Article]) -> int:
+    processed_count = 0
     for article in articles:
         try:
             # Split text
             text_to_embed = f"{article.title}\n\n{article.description}\n\n{article.content}"
             chunks = rag_service.split_text(text_to_embed)
-            
+
             vectors = []
             attributes = []
-            
+
             for chunk in chunks:
                 vec = embedder_service.embed_text(chunk)
                 if vec:
@@ -54,16 +51,37 @@ def process_vectorization(db: Session):
                         "article_id": article.id,
                         "chunk_content": chunk
                     })
-            
+
             if vectors:
                 milvus_service.insert_vectors(vectors, attributes)
-            
+
             article.is_vectorized = True
             db.commit() # Commit per article to save progress
-            
+            processed_count += 1
+
         except Exception as e:
             logger.error(f"Error vectorizing article {article.id}: {e}")
             db.rollback()
+    return processed_count
+
+def process_vectorization(db: Session) -> int:
+    logger.info("Starting vectorization...")
+    # Batch size 10 to avoid overload
+    articles = db.query(Article).filter(Article.is_vectorized == False).limit(50).all()
+    return _vectorize_articles(db, articles)
+
+def vectorize_articles_by_ids(article_ids: list[int]) -> int:
+    if not article_ids:
+        return 0
+    db: Session = SessionLocal()
+    try:
+        articles = db.query(Article).filter(
+            Article.id.in_(article_ids),
+            Article.is_vectorized == False
+        ).all()
+        return _vectorize_articles(db, articles)
+    finally:
+        db.close()
 
 scheduler = BackgroundScheduler()
 # Run every 30 minutes

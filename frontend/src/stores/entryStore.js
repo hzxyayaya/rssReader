@@ -85,8 +85,7 @@ export const useEntryStore = defineStore('entry', () => {
 
         try {
             const data = await fetchNews({
-                feedId: feedId,
-                limit: 100
+                feedId: feedId
             })
 
             // Map backend fields to frontend format

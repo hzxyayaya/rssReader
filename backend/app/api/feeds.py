@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.feed import Feed as FeedModel
@@ -7,6 +7,7 @@ from app.models.user import User
 from app.schemas.feed import Feed as FeedSchema, FeedCreate
 from app.core.security import get_current_user
 from app.services.rss_ingest import rss_ingest_service
+from app.tasks.scheduler import vectorize_articles_by_ids
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ def read_feeds(
 def create_feed(
     feed: FeedCreate, 
     db: Session = Depends(get_db), 
+    background_tasks: BackgroundTasks = None,
     current_user: User = Depends(get_current_user)
 ):
     # Check if exists for user
@@ -43,10 +45,19 @@ def create_feed(
     db.refresh(db_feed)
     
     # Trigger initial fetch (sync for now, better async)
+    new_articles = []
     try:
-        rss_ingest_service.process_feed(db, db_feed.id, db_feed.url)
+        new_articles = rss_ingest_service.process_feed(db, db_feed.id, db_feed.url)
     except Exception as e:
         print(f"Error fetching feed: {e}")
+    
+    if new_articles:
+        article_ids = [article.id for article in new_articles if article.id is not None]
+        if article_ids:
+            if background_tasks:
+                background_tasks.add_task(vectorize_articles_by_ids, article_ids)
+            else:
+                vectorize_articles_by_ids(article_ids)
         
     return db_feed
 
