@@ -3,6 +3,8 @@ from google import genai
 from app.core.config import settings
 from app.services.embedder import embedder_service
 from app.vector.milvus import milvus_service
+from app.db.session import SessionLocal
+from app.models.article import Article
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +61,22 @@ class RagService:
         # 4. Format results with deduplication
         contexts = []
         seen = set()
+        fallback_ids = set()
         if results:
             for hit in results[0]:
-                content = hit.entity.get("chunk_content")
-                article_id = hit.entity.get("article_id")
+                entity = getattr(hit, "entity", None)
+                content = entity.get("chunk_content") if entity else None
+                article_id = entity.get("article_id") if entity else None
                 if content and content not in seen:
                     contexts.append(content)
                     seen.add(content)
                     logger.debug(f"Found chunk from article {article_id}")
+                elif article_id is not None:
+                    fallback_ids.add(article_id)
+
+        if fallback_ids and len(contexts) < top_k:
+            remaining = top_k - len(contexts)
+            contexts.extend(self._fallback_contexts_from_articles(list(fallback_ids), remaining))
         
         logger.info(f"RAG retrieved {len(contexts)} context chunks")
         return contexts
@@ -94,5 +104,23 @@ class RagService:
         except Exception as e:
             logger.error(f"Generate content failed: {e}")
             return "抱歉，AI 服务暂时不可用。"
+
+    def _fallback_contexts_from_articles(self, article_ids: list[int], max_chunks: int) -> list[str]:
+        if not article_ids or max_chunks <= 0:
+            return []
+        db = SessionLocal()
+        try:
+            articles = db.query(Article).filter(Article.id.in_(article_ids)).all()
+            contexts = []
+            for article in articles:
+                text_to_embed = f"{article.title}\n\n{article.description or ''}\n\n{article.content or ''}"
+                chunks = self.split_text(text_to_embed)
+                for chunk in chunks:
+                    contexts.append(chunk)
+                    if len(contexts) >= max_chunks:
+                        return contexts
+            return contexts
+        finally:
+            db.close()
 
 rag_service = RagService()
